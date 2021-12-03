@@ -1,70 +1,77 @@
-# Getting Started with Create React App
+# Summary
+A Typescript-related problem occurs when a project requires multiple versions of the same package, where one of the versions has a TS declaration file, while the other does not.
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+In this example, storybook v6.4.4 runs into conflicts with `react-router-dom@5.3.0` since both dependencies require `react-router`, with `react-router@6.0.2` required by the former and `react-router@5.2.1` required by the latter.
 
-## Available Scripts
+However, the manner that berry resolves the dependency causes the typing issues.
 
-In the project directory, you can run:
+# Specs
+OSX 11.6  
+yarn 3.1.1 (berry)  
+node 14.17.0
 
-### `yarn start`
+# Steps to reproduce
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+```bash
+git clone https://github.com/fkurniaw/yarn-types-resolution.git
+yarn start
+```
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+The resultant error is as follows when [http://localhost:3000](http://localhost:3000) is opened:
+```
+Failed to compile
+/Users/fkurniaw/yarn-types-resolution/src/App.tsx
+TypeScript error in /Users/fkurniaw/yarn-types-resolution/src/App.tsx(20,11):
+Property 'user' does not exist on type 'Readonly<Params<{ user?: string | undefined; }>>'.  TS2339
 
-### `yarn test`
+    18 | 
+    19 | function Users() {
+  > 20 |   const { user } = useParams<{ user?: string }>();
+       |           ^
+    21 |   return <h2>{`User: ${user}`}</h2>;
+    22 | }
+    23 |
+This error occurred during the build time and cannot be dismissed.
+```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+When `yarn list react-router-dom` is run, the following dependency tree is shown:
+```
+yarn why react-router-dom
+├─ @storybook/router@npm:6.4.4
+│  └─ react-router-dom@npm:6.0.2 (via npm:^6.0.0)
+│
+├─ @storybook/router@npm:6.4.4 [371ff]
+│  └─ react-router-dom@npm:6.0.2 [36ca9] (via npm:^6.0.0 [36ca9])
+│
+└─ yarn-types-resolution@workspace:.
+   └─ react-router-dom@npm:5.3.0 [c8220] (via npm:5.3.0 [c8220])
+```
 
-### `yarn build`
+The corresponding `node_modules` structure of the project is as follows:
+```
+├─ project/node_modules
+│  └─ @storybook/router@6.4.4
+│  └─ react-router-dom@5.3.0
+│     └– node_modules
+│        └─ react-router@5.2.1  (no TS declaration files)
+│  └─ react-router@6.0.2
+│     └– index.d.ts
+```
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+This resolution manner causes issues with typescript, as `react-router-dom@5.3.0` has a dependency on react-router@5.2.1`, while storybook depends on `react-router@6.0.2`
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+Since `react-router@5.2.1` does not have a TS declaration file but `react-router@6.0.2` does, `typescript` defaults to looking at the root `node_modules` for a typescript declaration file. This raises TS compilation errors as the source code uses `react-router` v5, whose API's have differing method signatures compared to v6.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Expected Behavior
+There should be no typescript errors due to the hoisting of a dependency with multiple versions in the same project.
 
-### `yarn eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
-
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
-
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `yarn build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+In the event of a dependency mismatch (e.g. differing major versions), the structure of node_modules should ideally look like the following to avoid the importing of conflicting declaration files:
+```
+├─ project/node_modules
+│  └─ @storybook/router@6.4.4
+│     └─ node_modules
+│        └─ react-router@6.0.2
+│  └─ react-router-dom@5.3.0
+│     └─ node_modules
+│        └─ react-router@5.2.1
+```
